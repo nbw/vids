@@ -1,0 +1,53 @@
+# GoReleaser configuration. Docs: https://goreleaser.com
+# Validate locally with: goreleaser check
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: vids
+    main: ./cmd/vids
+    binary: vids
+    env:
+      - CGO_ENABLED=0 # pure Go: we shell out to ffmpeg, nothing to link
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - id: vids
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  draft: false
+  prerelease: auto

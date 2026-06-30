@@ -1,0 +1,16 @@
+# Compiled binary
+/vids
+/cmd/vids/vids
+
+# GoReleaser output
+/dist/
+
+# Local sample media (large; not tracked)
+*.mp4
+*.MP4
+*.mov
+*.MOV
+*.mkv
+
+# OS cruft
+.DS_Store
