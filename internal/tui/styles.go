@@ -13,6 +13,7 @@ var (
 	mutedStyle    = lipgloss.NewStyle().Foreground(muted)
 	dimStyle      = lipgloss.NewStyle().Foreground(dim)
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(accent)
+	markedStyle   = lipgloss.NewStyle().Foreground(accent)
 	labelStyle    = lipgloss.NewStyle().Foreground(dim)
 	footerStyle   = lipgloss.NewStyle().Foreground(muted)
 	goodStyle     = lipgloss.NewStyle().Foreground(good)

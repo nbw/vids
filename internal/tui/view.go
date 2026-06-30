@@ -56,13 +56,17 @@ func (m Model) viewList(w int) string {
 		b.WriteString(mutedStyle.Render("No videos found here."))
 		return b.String()
 	}
+	lo, hi := m.selRange()
 	for i, f := range m.files {
 		text := fmt.Sprintf("%s  %s", f.Name, humanSize(f.Size))
 		text = shorten(text, avail-2) // leave 2 columns for the gutter
-		if i == m.cursor {
+		switch {
+		case i == m.cursor:
 			row := padRight("> "+text, avail)
 			b.WriteString(selectedStyle.Render(row) + "\n")
-		} else {
+		case m.anchor >= 0 && i >= lo && i <= hi:
+			b.WriteString(markedStyle.Render("▌ "+text) + "\n")
+		default:
 			b.WriteString("  " + text + "\n")
 		}
 	}
@@ -72,8 +76,10 @@ func (m Model) viewList(w int) string {
 func (m Model) viewRight(w int) string {
 	var b strings.Builder
 
-	// Metadata header (always shown for the selected file).
-	if len(m.files) > 0 {
+	if m.isBatchContext() {
+		b.WriteString(m.viewBatchHeader(w))
+	} else if len(m.files) > 0 {
+		// Metadata header for the highlighted file.
 		f := m.files[m.cursor]
 		b.WriteString(titleStyle.Render(shorten(f.Name, w-2)) + "\n")
 		if info := m.currentProbe(); info != nil {
@@ -100,10 +106,42 @@ func (m Model) viewRight(w int) string {
 		b.WriteString(m.viewResizeSettings())
 	case stateConverting:
 		b.WriteString(m.viewConverting())
+	case stateBatchProbing:
+		b.WriteString(mutedStyle.Render("Reading metadata…"))
+	case stateBatchConverting:
+		b.WriteString(m.viewBatchConverting())
+	case stateNotice:
+		b.WriteString(m.viewNotice(w))
 	case stateDone:
 		b.WriteString(m.viewDone(w))
 	default:
 		b.WriteString(dimStyle.Render("Press Enter to choose an action."))
+	}
+	return b.String()
+}
+
+// isBatchContext reports whether the right pane should show the group header
+// (count + shared traits) instead of the single highlighted file's metadata.
+func (m Model) isBatchContext() bool {
+	switch m.state {
+	case stateBatchProbing, stateBatchConverting, stateNotice:
+		return true
+	case stateResizeSettings, stateDone:
+		return m.batch
+	}
+	return false
+}
+
+// viewBatchHeader shows the selection count and the traits shared by the group.
+func (m Model) viewBatchHeader(w int) string {
+	var b strings.Builder
+	idx := m.selectedIndices()
+	b.WriteString(titleStyle.Render(fmt.Sprintf("%d videos selected", len(idx))) + "\n")
+	if len(idx) > 0 {
+		if info := m.probeCache[m.files[idx[0]].Path]; info != nil {
+			b.WriteString(metaLine("Dimensions", fmt.Sprintf("%d x %d", info.Width, info.Height)))
+			b.WriteString(metaLine("Codec", info.Codec))
+		}
 	}
 	return b.String()
 }
@@ -147,19 +185,54 @@ func (m Model) viewResizeSettings() string {
 	b.WriteString(settingRow("Quality", qval, m.settingsField == fieldQuality))
 
 	if len(m.rungs) > 0 {
-		out := media.OutputPath(m.dir, m.files[m.cursor].Name, m.rungs[m.sizeCursor].P)
-		b.WriteString(settingRow("Output", filepath.Base(out), false))
+		if m.batch {
+			b.WriteString(settingRow("Output", fmt.Sprintf("%d files, suffixed _%dp.mp4", m.selCount(), m.rungs[m.sizeCursor].P), false))
+		} else {
+			out := media.OutputPath(m.dir, m.files[m.cursor].Name, m.rungs[m.sizeCursor].P)
+			b.WriteString(settingRow("Output", filepath.Base(out), false))
+		}
 	}
 
+	label := "Confirm & Convert"
+	if m.batch {
+		label = fmt.Sprintf("Confirm & Convert %d", m.selCount())
+	}
 	b.WriteString("\n")
-	confirm := "  Confirm & Convert"
+	confirm := "  " + label
 	switch {
 	case len(m.rungs) == 0:
-		confirm = disabledStyle.Render("  Confirm & Convert")
+		confirm = disabledStyle.Render("  " + label)
 	case m.settingsField == fieldConfirm:
-		confirm = fieldFocused.Render("> Confirm & Convert")
+		confirm = fieldFocused.Render("> " + label)
 	}
 	b.WriteString(confirm + "\n")
+	return b.String()
+}
+
+func (m Model) viewBatchConverting() string {
+	var b strings.Builder
+	name := ""
+	if m.batchPos < len(m.batchQueue) {
+		name = m.files[m.batchQueue[m.batchPos]].Name
+	}
+	b.WriteString(labelStyle.Render(fmt.Sprintf("Converting %d/%d", m.batchPos+1, m.batchTotal)) + "\n")
+	b.WriteString(dimStyle.Render(name) + "\n\n")
+	b.WriteString(m.prog.ViewAs(m.frac) + "\n\n")
+	b.WriteString(metaLine("Progress", fmt.Sprintf("%.0f%%", m.frac*100)))
+	if m.speed != "" {
+		b.WriteString(metaLine("Speed", m.speed))
+	}
+	b.WriteString(metaLine("ETA", m.eta))
+	return b.String()
+}
+
+func (m Model) viewNotice(w int) string {
+	var b strings.Builder
+	b.WriteString(badStyle.Render("Can't batch this selection") + "\n\n")
+	for _, line := range strings.Split(m.notice, "\n") {
+		b.WriteString(dimStyle.Render(shorten(line, w-2)) + "\n")
+	}
+	b.WriteString("\n" + dimStyle.Render("Enter to return."))
 	return b.String()
 }
 
@@ -176,6 +249,9 @@ func (m Model) viewConverting() string {
 }
 
 func (m Model) viewDone(w int) string {
+	if m.batch {
+		return m.viewBatchDone(w)
+	}
 	var b strings.Builder
 	if m.doneErr != nil {
 		b.WriteString(badStyle.Render("Conversion failed") + "\n")
@@ -188,16 +264,60 @@ func (m Model) viewDone(w int) string {
 	return b.String()
 }
 
+func (m Model) viewBatchDone(w int) string {
+	var b strings.Builder
+	var ok int
+	var failed []batchResult
+	for _, r := range m.batchResults {
+		if r.err != nil {
+			failed = append(failed, r)
+		} else {
+			ok++
+		}
+	}
+
+	header := fmt.Sprintf("✓ %d done", ok)
+	if len(failed) > 0 {
+		header += fmt.Sprintf(", %d failed", len(failed))
+	}
+	b.WriteString(goodStyle.Render(header) + "\n")
+	if m.batchCancel {
+		b.WriteString(dimStyle.Render(fmt.Sprintf("Canceled after %d of %d.", len(m.batchResults), m.batchTotal)) + "\n")
+	}
+
+	// List failures, bounded so the summary can't overflow the pane.
+	const maxList = 6
+	for i, r := range failed {
+		if i == maxList {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("…and %d more.", len(failed)-maxList)) + "\n")
+			break
+		}
+		b.WriteString(badStyle.Render(shorten(r.name, w-2)) + "\n")
+	}
+
+	b.WriteString("\n" + dimStyle.Render("Enter to return."))
+	return b.String()
+}
+
 func (m Model) footer() string {
 	switch m.state {
 	case stateBrowsing:
-		return "↑/↓ navigate   enter select   q quit"
+		if m.selCount() > 1 {
+			return fmt.Sprintf("shift+↑/↓ select   enter resize %d   esc clear   q quit", m.selCount())
+		}
+		return "↑/↓ navigate   shift+↑/↓ select   enter select   q quit"
 	case stateActionMenu:
 		return "↑/↓ move   enter/R choose   esc back"
 	case stateResizeSettings:
 		return "↑/↓ field   ←/→ change   enter confirm   esc back"
 	case stateConverting:
 		return "esc cancel"
+	case stateBatchProbing:
+		return "reading metadata…   esc cancel"
+	case stateBatchConverting:
+		return "esc cancel batch"
+	case stateNotice:
+		return "enter return"
 	case stateDone:
 		return "enter return"
 	}

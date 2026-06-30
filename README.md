@@ -20,6 +20,10 @@ software.
 - Two-pane TUI (file list + live metadata) — think a tiny tmux for your videos.
 - Arrow-key navigation; non-video files are filtered out automatically.
 - Per-file metadata: dimensions, codec, duration, fps, bitrate, size.
+- **Group select & batch resize** — hold `shift` with the arrows to select a
+  range of clips. When they share the same dimensions and codec, `vids` shows
+  the common traits, you pick one target size, and it converts the whole group
+  one-by-one with a progress readout and an end-of-run summary.
 - Resize to standard resolutions (1440p / 1080p / 720p / 480p / 360p),
   downscale-only and aspect-ratio preserving, with even dimensions for H.264.
 - Quality presets (High / Medium / Small = CRF 18 / 23 / 28); Medium is the default.
@@ -76,22 +80,26 @@ vids --version  # print version
 
 ### Keys
 
-| Context        | Key            | Action                                  |
-| -------------- | -------------- | --------------------------------------- |
-| Browse         | `↑` / `↓`      | Move between videos                     |
-| Browse         | `Enter`        | Select the highlighted video            |
-| Browse         | `q`            | Quit                                    |
-| Action menu    | `↑` / `↓`      | Move between actions                    |
-| Action menu    | `Enter` / `R`  | Choose **Resize**                       |
-| Action menu    | `Esc`          | Back to the file list                   |
-| Resize         | `↑` / `↓`      | Move between fields (Size / Quality)    |
-| Resize         | `←` / `→`      | Change the focused field's value        |
-| Resize         | `Enter`        | Confirm & convert (on the confirm row)  |
-| Resize         | `Esc`          | Back to the action menu                 |
-| Converting     | `Esc`          | Cancel (the partial output is removed)  |
+| Context        | Key                 | Action                                       |
+| -------------- | ------------------- | -------------------------------------------- |
+| Browse         | `↑` / `↓`           | Move between videos                          |
+| Browse         | `Shift`+`↑` / `↓`   | Extend a group selection                     |
+| Browse         | `Enter`             | Select the highlighted video, or — with a group selected — open batch resize |
+| Browse         | `Esc`               | Clear the group selection                    |
+| Browse         | `q`                 | Quit                                         |
+| Action menu    | `↑` / `↓`           | Move between actions                         |
+| Action menu    | `Enter` / `R`       | Choose **Resize**                           |
+| Action menu    | `Esc`               | Back to the file list                        |
+| Resize         | `↑` / `↓`           | Move between fields (Size / Quality)         |
+| Resize         | `←` / `→`           | Change the focused field's value             |
+| Resize         | `Enter`             | Confirm & convert (on the confirm row)       |
+| Resize         | `Esc`               | Back (to the action menu, or the file list for a batch) |
+| Converting     | `Esc`               | Cancel (the partial output is removed; a batch stops) |
 
-> Convert-to-different-format (codec/container) is on the roadmap; v1 focuses on
-> resizing.
+> Batch resize requires the selected clips to share the same dimensions and
+> codec; a mixed selection is reported and left for you to narrow.
+>
+> Convert-to-different-format (codec/container) is still on the roadmap.
 
 ## Development
 
